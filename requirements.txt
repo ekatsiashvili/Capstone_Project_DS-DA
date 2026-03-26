@@ -1,0 +1,21 @@
+# Ядро для запуску квантованої моделі (GGUF) локально на CPU/GPU
+llama-cpp-python>=0.2.56
+
+# Екосистема Hugging Face для роботи з моделями та датасетами
+transformers>=4.38.0
+datasets>=2.18.0
+huggingface-hub>=0.21.0
+accelerate>=0.27.2
+
+# Бібліотеки для донавчання (Fine-Tuning) методом LoRA
+peft>=0.9.0
+torch>=2.2.0
+
+# Бібліотеки для підрахунку метрик якості (ROUGE та BERTScore)
+evaluate>=0.4.0
+rouge-score>=0.1.2
+bert_score>=0.3.13
+
+# Базові інструменти для роботи з даними (парсинг, аналіз JSONL)
+pandas>=2.0.0
+numpy>=1.24.0
