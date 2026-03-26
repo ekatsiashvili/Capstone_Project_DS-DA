@@ -1,59 +1,71 @@
 import json
-import pandas as pd
 import re
+import os
 
 def clean_text(text):
     """
-    Базове очищення юридичного тексту від зайвих пробілів та спецсимволів.
+    Очищення юридичного тексту від зайвих пробілів, html-тегів та перенесень рядків.
     """
+    if not isinstance(text, str):
+        return ""
+    # Видаляємо множинні пробіли та специфічні символи розмітки
     text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\\n', ' ', text)
     return text.strip()
 
-def create_instruction_format(document, summary):
+def prepare_training_dataset(input_jsonl_path, output_json_path):
     """
-    Формує словник у форматі інструкцій для донавчання моделі (Alpaca/Mistral format).
+    Зчитує сирий датасет (legal_dataset_raw.jsonl), очищає його і перетворює 
+    у формат Alpaca/Mistral Instruct (train.json) для подальшого Fine-Tuning.
     """
-    system_prompt = "Виділи головну думку з цього тексту одним коротким реченням. Не додавай нічого від себе."
+    print(f"⏳ Зчитування сирого датасету з {input_jsonl_path}...")
     
-    # Формування єдиного рядка для навчання (формат Mistral Instruct)
-    formatted_text = f"<s>[INST] {system_prompt}\n\nТекст:\n{document} [/INST] {summary} </s>"
-    
-    return {"text": formatted_text}
+    if not os.path.exists(input_jsonl_path):
+        print(f"❌ Помилка: Файл {input_jsonl_path} не знайдено.")
+        return
 
-def prepare_dataset(output_jsonl_path):
-    """
-    Імітує завантаження сирих даних та їх перетворення у JSONL датасет для Fine-Tuning.
-    У реальному проєкті тут може бути pd.read_csv('raw_legal_data.csv').
-    """
-    print("Запуск пайплайну підготовки даних...")
+    formatted_data = []
+    # Системний промпт, який використовуємо для навчання
+    instruction_prompt = "Створи стисле юридичне резюме (summary) для наступного документу, виділивши ключові зміни або рішення."
     
-    # Приклад наших еталонних даних (Gold Standard)
-    raw_data = [
-        {
-            "doc": "КМУ скасував часові обмеження щодо увімкнення денних ходових вогнів або ближнього світла фар поза населеними пунктами. Відтепер ця вимога діє цілий рік для всіх механічних транспортних засобів.",
-            "sum": "КМУ скасував часові обмеження щодо увімкнення денних ходових вогнів... Відтепер ця вимога діє цілий рік для всіх транспортних засобів."
-        },
-        {
-            "doc": "Договір оренди будівлі завжди укладається письмово. Обов'язковому нотаріальному посвідченню підлягають договори зі строком оренди від 3 років (для державного чи комунального майна на аукціоні — зі строком понад 5 років).",
-            "sum": "Договір найму будівлі або іншої капітальної споруди укладається письмово та підлягає нотаріальному посвідченню, якщо строк дії договору більше трьох років."
-        }
-        # У реальному скрипті тут будуть сотні рядків з CSV або бази даних
-    ]
+    processed_count = 0
     
-    df = pd.DataFrame(raw_data)
-    print(f"Знайдено записів для обробки: {len(df)}")
-    
-    # Збереження у формат JSONL (кожен рядок - це окремий валідний JSON)
-    with open(output_jsonl_path, 'w', encoding='utf-8') as f:
-        for _, row in df.iterrows():
-            cleaned_doc = clean_text(row['doc'])
-            cleaned_sum = clean_text(row['sum'])
+    try:
+        with open(input_jsonl_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                    
+                raw_record = json.loads(line)
+                
+                # Витягуємо повний текст закону
+                doc_input = clean_text(raw_record.get('full_text', ''))
+                
+                doc_output = clean_text(raw_record.get('title', '')) 
+                
+                # Формуємо структуру для Unsloth / Mistral
+                if doc_input and len(doc_input) > 50 and doc_output:
+                    formatted_data.append({
+                        "instruction": instruction_prompt,
+                        "input": doc_input,
+                        "output": doc_output
+                    })
+                    processed_count += 1
+
+        # Зберігаємо у файл train.json
+        with open(output_json_path, 'w', encoding='utf-8') as f_out:
+           
+            json.dump(formatted_data, f_out, ensure_ascii=False, indent=2)
             
-            instruction_data = create_instruction_format(cleaned_doc, cleaned_sum)
-            f.write(json.dumps(instruction_data, ensure_ascii=False) + '\n')
-            
-    print(f"Датасет успішно збережено у {output_jsonl_path}")
+        print(f"📊 Оброблено документів: {processed_count}")
+        print(f"✅ Датасет успішно очищено та збережено у файл: {output_json_path}")
+        print("Готово до завантаження в Google Colab для Fine-Tuning!")
+        
+    except Exception as e:
+        print(f"❌ Сталася помилка під час обробки даних: {e}")
 
 if __name__ == "__main__":
-    # Запуск скрипта
-    prepare_dataset("legal_dataset_finetuning.jsonl")
+    RAW_DATA_FILE = "data/legal_dataset_raw.jsonl"
+    FINAL_TRAINING_FILE = "data/train.json"
+    
+    prepare_training_dataset(RAW_DATA_FILE, FINAL_TRAINING_FILE)
